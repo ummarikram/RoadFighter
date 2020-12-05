@@ -9,8 +9,13 @@ FuelDisplay: db 'FUEL : $'
 Fuel: dw 1600
 Distance: dw 0
 ;-------START SCREEN-----------
+GameName: db 'ROAD FIGHTER$'
+UnderLine: db '____________$'
 PlayGame: db '1. Play$'
 ExitGame: db '2. Exit$'
+;--------END SCREEN------------
+WinMessage: db 'GOOD JOB! YOU WON$'
+LoseMessage: db 'BETTER LUCK NEXT TIME$'
 ;-------COMPARATORS------------
 Comparator: dw 0x0000
 RowComparator : dw 0x0000
@@ -730,15 +735,90 @@ ret
 ;-----------------------------------------START SCREEN------------------------------------------
 StartScreen:
 
+call ResetScreenPointer
+
+;--------LEFT White COLOR BOUNDARY------
+mov cx, 15
+
+mov word[Color],0x0FB3   ; White colour
+
+mov word[Comparator], 16
+
+call DisplayObject ; Left White Boundary
+
+
+;-------------SILVER ROAD---------------
+mov cx, 16
+
+mov word[Color],0x7720   ; Silver colour
+
+mov word[Comparator], 29
+
+call DisplayObject ; Silver Road
+
+
+;-------RIGHT White COLOR BOUNDARY-------------
+
+mov cx, 29
+
+mov word[Color],0x0FB3   ; White colour
+
+mov word[Comparator], 30
+
+call DisplayObject ; Right White Boundary
+
+;-------TWO RED CARS---------
+
+mov cx, 20  ; Column
+mov bx, 1  ; Row
+call FindPosition      
+mov word[es:di], 0x7408  ; Car Color
+
+mov cx, 25  ; Column
+mov bx, 5  ; Row
+call FindPosition      
+mov word[es:di], 0x7408  ; Car Color
+
+;-------NAME & OPTIONS---------
+
+mov ax, 0   ; No Value
+push ax
+mov si, GameName  ; Prompt
+push si
+mov ax, 6   ; Row
+push ax
+mov ax, 48   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+mov ax, 0   ; No Value
+push ax
+mov si, UnderLine ; Prompt
+push si
+mov ax, 7   ; Row
+push ax
+mov ax, 48   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+
 mov ax, 0   ; No Value
 push ax
 mov si, PlayGame  ; Prompt
 push si
 mov ax, 10   ; Row
 push ax
-mov ax, 35   ; Column
+mov ax, 50   ; Column
 push ax
-call PrintStats  ; Print Score
+call PrintStats  
 pop ax
 pop ax
 pop si
@@ -750,9 +830,9 @@ mov si, ExitGame  ; Prompt
 push si
 mov ax, 14   ; Row
 push ax
-mov ax, 35   ; Column
+mov ax, 50   ; Column
 push ax
-call PrintStats  ; Print Score
+call PrintStats 
 pop ax
 pop ax
 pop si
@@ -760,14 +840,67 @@ pop ax
 
 ret
 ;-----------------------------------------END SCREEN--------------------------------------------
-; -----------------------------------------MAIN-------------------------------------------------
-start:
+DisplayEnd:
+call EndScreen
+WaitForKey:
+mov ah, 01
+int 16h
+jz WaitForKey   ; if no key pressed 
+jmp Terminate
 
+PlayerWon:
 call ClearScreen 
+mov byte[Won], 1
+jmp DisplayEnd
 
+PlayerLost:
+call ClearScreen 
+jmp DisplayEnd
+
+EndScreen:
+cmp byte[Won], 0
+je Lost
+
+mov ax, 0   ; No Value
+push ax
+mov si, WinMessage  ; Prompt
+push si
+mov ax, 12   ; Row
+push ax
+mov ax, 30   ; Column
+push ax
+call PrintStats  ; Print Message
+pop ax
+pop ax
+pop si
+pop ax
+jmp ReturnBack
+
+Lost:
+mov ax, 0   ; No Value
+push ax
+mov si, LoseMessage  ; Prompt
+push si
+mov ax, 12   ; Row
+push ax
+mov ax, 30   ; Column
+push ax
+call PrintStats  ; Print Message
+pop ax
+pop ax
+pop si
+pop ax
+
+ReturnBack:
+ret
+;---------------------------------------START MENU----------------------------------------------
 SelectOption: 
 
-call StartScreen 
+call delay
+mov cx, 20
+mov word[Comparator], 26
+mov word[RowComparator], 24
+call MoveScreenDown  ; Moves two Cars
 
 ; Get Option Key
 mov ah, 01
@@ -785,9 +918,16 @@ cmp al, 32h ; ascii for '2'
 je Terminate
 
 jmp SelectOption
+; -----------------------------------------MAIN-------------------------------------------------
+start:
+
+call ClearScreen 
+call StartScreen 
+jmp SelectOption
 
 PlayChoosed:
 
+call ClearScreen 
 call BackGround 
 
 ; Game loop
@@ -800,11 +940,12 @@ call ShowStats  ; Print Fuel & Score
 call MoveBackground   ; Moving background
 call GetMainCarInput  ; Input for car
 
-cmp word[Fuel], 0     ; if no fuel left exit
-jbe Terminate
+cmp word[Fuel], 0     ; if no fuel left , Player loses
+jbe PlayerLost
 
-cmp word[LeftCarPosition], 0   ; if left car reached end line, exit
+cmp word[LeftCarPosition], 0   ; if left car reached end line, Player Wins else Loop
 jne mov_Again
+jmp PlayerWon
 
 Terminate:
 call ClearScreen 
