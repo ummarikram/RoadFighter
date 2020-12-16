@@ -21,6 +21,7 @@ Comparator: dw 0x0000
 RowComparator : dw 0x0000
 Color : dw 0x0000
 HurdleType: dw 0x0000
+EnemyCarFactor: dw 25
 RoadBumpFactor: dw 50
 PointsCarFactor: dw 100
 LeftCarMoveFactor: dw 50
@@ -32,10 +33,14 @@ MainCarPrevPosition: dw 35
 MainCarCoordinates : dw 0x0000
 ;-------COLOR PALLETE----------
 RoadBump: dw 0x70EC
-PointsCar: dw 0x7208
-PlayerCar: dw 0x7408
+PointsCar: dw 0x0F08
+EnemyCar: dw 0x7408
+PlayerCar: dw 0x7208
 ;-------CONSTANTS------
 RoadStart : dw 20
+CarSoundTime: dw 3500 ; Duration
+CollisionSoundTime: dw 65000   ; Duration
+SoundFrequency: dw 4560  ; Frequency
 
 ; ---------------------------------RESET VIDEO MEMORY ADDRESS--------------------------------------
 ResetScreenPointer:
@@ -160,11 +165,9 @@ push ax   ; sp + 4 -> ax
 call FillColor  ; sp+2 -> Return address
 
 pop ax
-
 pop cx
 
 inc cx
-
 cmp cx, word[Comparator] ; Ending Column location for Object
 jne RenderLoop
 
@@ -218,7 +221,8 @@ mov word [es:di], 0x7E0D  ; Yellow colour
 mov cx, 3         ; Start Left Car Place
 mov bx, 24  
 call FindPosition
-mov word [es:di], 0x7408  ; Red colour
+mov dx, [PlayerCar]
+mov word [es:di], dx  ; Red colour
 
 mov cx, 5
 mov word[Color],0x0FB3   ; White border line
@@ -228,114 +232,80 @@ call DisplayObject
 ;---------------------LIGHT YELLOW GROUND--------------------------------------------------------
 
 mov cx,7 ; Next Column location
-
 mov word[Color],0x1EDB   ; Light Yellow colour
-
 mov word[Comparator], 18
-
 call DisplayObject ; Yellow Ground
 
-
 ;---------------------LEFT White COLOR BOUNDARY--------------------------------------------
+
 mov cx, 18
-
 mov word[Color],0x0FB3   ; White colour
-
 mov word[Comparator], 19
-
 call DisplayObject ; Left White Boundary
 
-
 ;---------------------SILVER ROAD---------------------------------------------------------
+
 mov cx, 19
-
 mov word[Color],0x7720   ; Silver colour
-
 mov word[Comparator], 55
-
 call DisplayObject ; Silver Road
 
-
 ;---------------------RIGHT White COLOR BOUNDARY--------------------------------------------
+
 mov cx, 55
-
 mov word[Color],0x0FB3   ; White colour
-
 mov word[Comparator], 56
-
 call DisplayObject ; Right White Boundary
 
-
 ;-------------------BLUE COLOR WATER------------------------------------------------------
+
 mov cx, 56
-
 mov word[Color], 0x3FB0   ; Light Blue colour
-
 mov word[Comparator], 59
-
 call DisplayObject ; Water
 
-
 mov cx, 59
-
 mov word[Color], 0x09B1             ; Dark Blue colour
-
 mov word[Comparator], 63
-
 call DisplayObject ; Water
 
 ;-------------------GREEN GRASS----------------------------------------------------------
 
 mov word[Color], 0x6ADF
-
 mov word[RowComparator], 25
-
 mov bx,5 ; Row
-
 mov cx, 9  ; Column
-
 call Display_Grass_RoadLines
 
 ;--------------------
 
 mov bx,2 ; Row
-
 mov cx, 11  ; Column
-
 call Display_Grass_RoadLines
 
 ;--------------------
 
 mov bx,4 ; Row
-
 mov cx, 13  ; Column
-
 call Display_Grass_RoadLines
 
 ;--------------------
 
 mov bx,1 ; Row
-
 mov cx, 15  ; Column
-
 call Display_Grass_RoadLines
 
 ;--------------------ROAD LINES------------------------------------------------------------
 
 mov word[Color], 0x7FDD
-
 mov bx,1 ; Row
-
 mov cx, 36  ; Column
-
 call Display_Grass_RoadLines
 
 ;-----------------------------
 
 mov bx,2 ; Row
-
 mov cx, 36  ; Column
-
 call Display_Grass_RoadLines
 
 ret
@@ -351,7 +321,6 @@ call ResetScreenPointer
 
 mov cx, [bp+4] ; Column
 mov bx, [bp+6]; Row
-
 
 call FindPosition
 
@@ -401,45 +370,53 @@ ret
 Sound:
 mov al, 182         ; Prepare the speaker for the note.
 out 43h, al         
-mov ax, 4560        ; Frequency number (in decimal) for middle C.
+mov ax, [SoundFrequency]    ; Frequency number (in decimal)
 out 42h, al         ; Output low byte.
 mov al, ah          ; Output high byte.
 out 42h, al 
 in  al, 61h         ; Turn on note (get value from port 61h).
 or  al, 00000011b   ; Set bits 1 and 0.
 out 61h, al         ; Send new value.
-mov bx, 30          ; Pause for duration of Approx second
+
 .pause1:
-mov cx, dx   ; dx holds the frequency of sound
-.pause2:    
-dec cx
-jne .pause2
 dec bx
 jne .pause1
-in  al, 61h         ; Turn off note (get value from
-                    ;  port 61h).
+
+in  al, 61h         ; Turn off note (get value from port 61h).
 and al, 11111100b   ; Reset bits 1 and 0.
 out 61h, al         ; Send new value.
-ret 
 
+ret 
 ;-----------------------------------------COLLISION------------------------------------------
 ; dx holds the collision parameter
 Collision:
 cmp dx, [RoadBump]   ; Check if collided with a road bump
-je GotHit
-add word[PointsCarFactor], 70        ; Readjust factors that control generation
-add word[RoadBumpFactor], 70
+je RoadBumpHit
+
+cmp dx, [EnemyCar]
+je EnemyCarHit
+
+; if Collided with a point car
+add word[RoadBumpFactor], 50 ; Beacuse we increase score (Relative)
+add word[PointsCarFactor], 50  ; Beacuse we increase score (Relative)
+add word[EnemyCarFactor], 50
 add word[Score], 50  ; increase points
-mov dx, 100   ; low frequency
+mov bx, [CollisionSoundTime]   ; long duration
 call Sound
 jmp Back
 
-GotHit:   ; if collided with a road bump
-sub word[Fuel], 100   ; decrease fuel
-mov dx, 5000  ; high frequency
+EnemyCarHit:  ; if collided with an enemy car
+mov word[Fuel], 0 ; Game Over
+mov bx, [CollisionSoundTime]  ; long duration
 call Sound
+jmp Back
+
+RoadBumpHit:   ; if collided with a road bump
+sub word[Fuel], 100   ; decrease fuel
+mov bx, [CollisionSoundTime]  ; long duration
+call Sound
+
 Back:
-mov word[es:di], 0x7720  ; Silver Color , delete the object that collided
 ret
 ; ----------------------------------------MOVE SCREEN DOWN--------------------------------------
 
@@ -477,24 +454,38 @@ cmp bx,dx	; if Start point is not equal to end point, loop again
 jne MoveDown  ; i= n-1;i >= 0; i--
 
 call FindPosition  ; Finding Coordinates of first row
-pop dx  ; Restore saved Last Row
-mov [es:di], dx ; First Row = Previous Last Row
 
-; Remove Hurdle if no collision
-cmp dx, [RoadBump]       ; if 22 was a bump
-jne PointCar
-cmp dx, [MainCarCoordinates]
-je Collision 
-mov word[es:di], 0x7720  ; Silver Color
+pop dx  ; Restore previous saved Last Row
+
+cmp word[RowComparator], 24
+je NoCollision
+
+CheckRoadBump:
+cmp dx, [RoadBump]       ; check if it was a road bump
+jne CheckPointCar   ; if not than check for point car
+cmp dx, [MainCarCoordinates]  ; check if road bump was above player car
+jne Resume ; if not then skip
+call Collision  ; else collision occured
 jmp Resume
 
-; Remove Point Car if no collision
-PointCar:
-cmp dx, [PointsCar]
-jne Resume
-cmp dx, [MainCarCoordinates]
-je Collision
-mov word[es:di], 0x7720  ; Silver Color
+CheckPointCar:   
+cmp dx, [PointsCar]      ; check if it was a point car
+jne CheckEnemyCar     ; if not then it was another object so move it to first row
+cmp dx, [MainCarCoordinates]  ; check if point car was above player car
+jne Resume ; if not then skip
+call Collision ; else collision occured
+jmp Resume
+
+CheckEnemyCar:
+cmp dx, [EnemyCar]      ; check if it was a enemy car
+jne NoCollision     ; if not then it was another object so move it to first row
+cmp dx, [MainCarCoordinates]  ; check if enemy car was above player car
+jne Resume ; if not then skip
+call Collision ; else collision occured
+jmp Resume
+
+NoCollision:
+mov [es:di], dx ; First Row = Previous Last Row
 
 Resume:
 inc cx
@@ -529,7 +520,6 @@ pop dx
 mov word[LeftCarPosition], bx  ; Adjust Car Position
 
 ret
-
 ;------------------------------------CREATE CARS & HURDLES--------------------------------------
 GenerateRandomHurdles:   
 mov ah, 00h  ; interrupts to get system time        
@@ -543,6 +533,12 @@ div  cx       ; here dx contains the remainder of the division - from 0 to 29
 mov cx, [RoadStart]   ; Starting Point of Main Road
 add cx, dx   ; Add the random remainder we got to generate column
 
+cmp cx, 36  ; Check for middle lane
+jne DisplayHurdle
+
+inc cx
+
+DisplayHurdle:
 mov bx, 1      ; Row 
 call FindPosition
 
@@ -561,8 +557,9 @@ PrintCar:
 mov cx, [MainCarPosition]  ; Column
 mov bx, 23  ; Row
 
-call FindPosition      
-mov word[es:di], 0x7408  ; Car Color
+call FindPosition   
+mov dx, [PlayerCar]   
+mov word[es:di], dx  ; Car Color
 
 cmp cx, [MainCarPrevPosition] ; if prev position is same as current position then
 je NoMove
@@ -582,7 +579,6 @@ mov word[es:di], 0x7720  ; Silver Color
 NoMove:
 ret
 ;--------------------------------------MOVE MAIN CAR LEFT--------------------------------------------
-; For Moving car left
 MoveMainCarLeft:
 
 cmp word[MainCarPosition], 20   ; Left Road Bound
@@ -618,25 +614,26 @@ jmp Continue
 NormalRight:       
 inc word[MainCarPosition]
 jmp Continue
-;---------------------------------------INPUT DIRECTION----------------------------------------
-; Get Input Key 'a' OR 'd'
+;------------------------------------INPUT CAR DIRECTION----------------------------------------
+
 GetMainCarInput:
-; Input Direction Key
-mov ah, 01
+
+mov ah, 01    ; Keyboard interrupt
 int 16h
 jz Continue   ; if no key pressed continue
-
-xor ah, ah   ; Remove last keystroke from buffer
-int 16h
 
 mov dx, [MainCarPosition]     ; Store Previous Position 
 mov [MainCarPrevPosition], dx
 
-; Move according to keystroke
-cmp al, 61h ; ascii for 'a'   
+mov dh, ah ; Save ScanCode
+
+xor ah, ah   ; Remove last keystroke from buffer
+int 16h
+
+cmp dh, 75 ; ScanCode for left arrow  
 je MoveMainCarLeft
 
-cmp al, 64h ; ascii for 'd'
+cmp dh, 77 ; ScanCode for right arrow
 je MoveMainCarRight
 
 Continue:
@@ -658,7 +655,7 @@ mov ax, [RoadBumpFactor]
 cmp word[Score], ax   ; if score has reached the generation factor for road bump
 jne ChoosePointCar    ; we only generate the road bump then
 call GenerateRandomHurdles
-add word[RoadBumpFactor], 70
+add word[RoadBumpFactor], 35  ; Decrease to Increase Amount
 jmp RoadLogic
 
 ; For Point Cars
@@ -667,9 +664,20 @@ mov ax, [PointsCar]
 mov word[HurdleType], ax
 mov ax, [PointsCarFactor]
 cmp word[Score], ax   ; if score has reached the generation factor of point car 
+jne ChooseEnemyCar         ; we only generate the point car then
+call GenerateRandomHurdles
+add word[PointsCarFactor], 35  ; Decrease to Increase Amount
+jmp RoadLogic
+
+;For Enemy CARS
+ChooseEnemyCar:
+mov ax, [EnemyCar]
+mov word[HurdleType], ax
+mov ax, [EnemyCarFactor]
+cmp word[Score], ax   ; if score has reached the generation factor of point car 
 jne RoadLogic         ; we only generate the point car then
 call GenerateRandomHurdles
-add word[PointsCarFactor], 70
+add word[EnemyCarFactor], 35  ; Decrease to Increase Amount
 
 RoadLogic:
 mov cx, 19
@@ -687,7 +695,7 @@ mov word[Comparator], 55
 mov word[RowComparator], 22
 call MoveScreenDown  ; Moves Right half of road down
 
-call delay
+call delay  ; For Smoothness
 
 mov ax, [LeftCarMoveFactor]   ; Animation for left side car
 cmp word[Distance], ax
@@ -738,46 +746,39 @@ StartScreen:
 call ResetScreenPointer
 
 ;--------LEFT White COLOR BOUNDARY------
+
 mov cx, 15
-
 mov word[Color],0x0FB3   ; White colour
-
 mov word[Comparator], 16
-
 call DisplayObject ; Left White Boundary
 
-
 ;-------------SILVER ROAD---------------
+
 mov cx, 16
-
 mov word[Color],0x7720   ; Silver colour
-
 mov word[Comparator], 29
-
 call DisplayObject ; Silver Road
-
 
 ;-------RIGHT White COLOR BOUNDARY-------------
 
 mov cx, 29
-
 mov word[Color],0x0FB3   ; White colour
-
 mov word[Comparator], 30
-
 call DisplayObject ; Right White Boundary
 
 ;-------TWO RED CARS---------
 
 mov cx, 20  ; Column
 mov bx, 1  ; Row
-call FindPosition      
-mov word[es:di], 0x7408  ; Car Color
+call FindPosition
+mov dx, [PlayerCar]      
+mov word[es:di], dx  ; Car Color
 
 mov cx, 25  ; Column
 mov bx, 5  ; Row
-call FindPosition      
-mov word[es:di], 0x7408  ; Car Color
+call FindPosition  
+mov dx, [EnemyCar]     
+mov word[es:di], dx  ; Car Color
 
 ;-------NAME & OPTIONS---------
 
@@ -808,7 +809,6 @@ pop ax
 pop ax
 pop si
 pop ax
-
 
 mov ax, 0   ; No Value
 push ax
@@ -841,22 +841,20 @@ pop ax
 ret
 ;-----------------------------------------END SCREEN--------------------------------------------
 DisplayEnd:
+
+call ClearScreen 
 call EndScreen
+
 WaitForKey:
 mov ah, 01
 int 16h
 jz WaitForKey   ; if no key pressed 
-jmp Terminate
 
-PlayerWon:
-call ClearScreen 
-mov byte[Won], 1
-jmp DisplayEnd
+xor ah, ah   ; Remove last keystroke from buffer
+int 16h
 
-PlayerLost:
-call ClearScreen 
-jmp DisplayEnd
-
+ret
+;------------------------------
 EndScreen:
 cmp byte[Won], 0
 je Lost
@@ -914,13 +912,32 @@ int 16h
 cmp al, 31h ; ascii for '1'   
 je PlayChoosed
 
+cmp al, 70h ; ascii for 'p' 
+je PlayChoosed
+
 cmp al, 32h ; ascii for '2'
 je Terminate
 
+cmp al, 1Bh ; ascii for 'ESC'
+je Terminate
+
 jmp SelectOption
+;----------------------------------------RESET VARIABLES----------------------------
+Reset:
+mov word[Score], 0
+mov word[Fuel], 1600
+mov word[Distance], 0
+mov word[LeftCarPosition], 24
+mov byte[Won], 0
+mov word[EnemyCarFactor], 25
+mov word[RoadBumpFactor], 50
+mov word[PointsCarFactor], 100
+mov word[LeftCarMoveFactor], 50
+ret
 ; -----------------------------------------MAIN-------------------------------------------------
 start:
 
+call Reset
 call ClearScreen 
 call StartScreen 
 jmp SelectOption
@@ -931,7 +948,7 @@ call ClearScreen
 call BackGround 
 
 ; Game loop
-mov_Again:
+GameLoop:
 
 call PrintCar   ; Print Main Car
 
@@ -940,12 +957,23 @@ call ShowStats  ; Print Fuel & Score
 call MoveBackground   ; Moving background
 call GetMainCarInput  ; Input for car
 
-cmp word[Fuel], 0     ; if no fuel left , Player loses
-jbe PlayerLost
+mov bx, [CarSoundTime]  ; duration
+call Sound   ; Car moving sound
 
-cmp word[LeftCarPosition], 0   ; if left car reached end line, Player Wins else Loop
-jne mov_Again
-jmp PlayerWon
+CheckFuel:
+cmp word[Fuel], 0     ; check if no fuel left
+ja CheckFinishLine  ; if there is fuel available then check for finish line
+
+call DisplayEnd    ; else show end screen for player lose
+jmp start   ; Go back to main menu
+
+CheckFinishLine:
+cmp word[LeftCarPosition], 0   ; check if left car reached end line
+ja GameLoop   ; if not reached end line then loop again
+
+mov byte[Won], 1  ; Player Won is true
+call DisplayEnd   ; else show end screen for player won
+jmp start   ; Go back to main menu
 
 Terminate:
 call ClearScreen 
