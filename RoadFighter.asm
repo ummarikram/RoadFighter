@@ -17,8 +17,8 @@ ExitGame: db '2. Exit$'
 WinMessage: db 'GOOD JOB! YOU WON$'
 LoseMessage: db 'BETTER LUCK NEXT TIME$'
 ;-------COMPARATORS------------
-Comparator: dw 0x0000
-RowComparator : dw 0x0000
+EndingColumn: dw 0x0000
+EndingRow : dw 0x0000
 Color : dw 0x0000
 HurdleType: dw 0x0000
 EnemyCarFactor: dw 25
@@ -168,7 +168,7 @@ pop ax
 pop cx
 
 inc cx
-cmp cx, word[Comparator] ; Ending Column location for Object
+cmp cx, word[EndingColumn] ; Ending Column location for Object
 jne RenderLoop
 
 ret
@@ -190,7 +190,7 @@ mov word [es:di], dx
 
 add bx,5   ; Gap
 
-cmp bx, [RowComparator]
+cmp bx, [EndingRow]
 jb Render_Grass_RoadLines
 
 ret
@@ -200,12 +200,12 @@ BackGround:
 ;-------------------LEFT ROAD | FLAGS | LEFT CAR---------------------------------
 mov cx, 1
 mov word[Color],0x0FB3   ; White border line
-mov word[Comparator], 2
+mov word[EndingColumn], 2
 call DisplayObject
 
 mov cx,2 ; Starting Column Location for Left most silver line 
 mov word[Color],0x7720   ; Silver colour
-mov word[Comparator], 5
+mov word[EndingColumn], 5
 call DisplayObject ; Silver Line
 
 mov cx, 2      ; End Blue Flag
@@ -226,53 +226,53 @@ mov word [es:di], dx  ; Red colour
 
 mov cx, 5
 mov word[Color],0x0FB3   ; White border line
-mov word[Comparator], 6
+mov word[EndingColumn], 6
 call DisplayObject
 
 ;---------------------LIGHT YELLOW GROUND--------------------------------------------------------
 
 mov cx,7 ; Next Column location
 mov word[Color],0x1EDB   ; Light Yellow colour
-mov word[Comparator], 18
+mov word[EndingColumn], 18
 call DisplayObject ; Yellow Ground
 
 ;---------------------LEFT White COLOR BOUNDARY--------------------------------------------
 
 mov cx, 18
 mov word[Color],0x0FB3   ; White colour
-mov word[Comparator], 19
+mov word[EndingColumn], 19
 call DisplayObject ; Left White Boundary
 
 ;---------------------SILVER ROAD---------------------------------------------------------
 
 mov cx, 19
 mov word[Color],0x7720   ; Silver colour
-mov word[Comparator], 55
+mov word[EndingColumn], 55
 call DisplayObject ; Silver Road
 
 ;---------------------RIGHT White COLOR BOUNDARY--------------------------------------------
 
 mov cx, 55
 mov word[Color],0x0FB3   ; White colour
-mov word[Comparator], 56
+mov word[EndingColumn], 56
 call DisplayObject ; Right White Boundary
 
 ;-------------------BLUE COLOR WATER------------------------------------------------------
 
 mov cx, 56
 mov word[Color], 0x3FB0   ; Light Blue colour
-mov word[Comparator], 59
+mov word[EndingColumn], 59
 call DisplayObject ; Water
 
 mov cx, 59
 mov word[Color], 0x09B1             ; Dark Blue colour
-mov word[Comparator], 63
+mov word[EndingColumn], 63
 call DisplayObject ; Water
 
 ;-------------------GREEN GRASS----------------------------------------------------------
 
 mov word[Color], 0x6ADF
-mov word[RowComparator], 25
+mov word[EndingRow], 25
 mov bx,5 ; Row
 mov cx, 9  ; Column
 call Display_Grass_RoadLines
@@ -348,7 +348,6 @@ nextdigit:
 mov dx, 0 ; zero upper half of dividend
 div bx ; divide by 10
 add dl, 0x30 ; convert digit into ascii value
-mov word[Comparator], dx
 push dx ; save ascii value on stack
 inc cx ; increment count of values
 cmp ax, 0 ; is the quotient zero
@@ -425,7 +424,7 @@ MoveScreenDown:
 call ResetScreenPointer
 
 MoveRight:
-mov bx , [RowComparator] ; Last Row
+mov bx , [EndingRow] ; Last Row
 
 call FindPosition
 
@@ -457,7 +456,7 @@ call FindPosition  ; Finding Coordinates of first row
 
 pop dx  ; Restore previous saved Last Row
 
-cmp word[RowComparator], 24
+cmp word[EndingRow], 24
 je NoCollision
 
 CheckRoadBump:
@@ -489,7 +488,7 @@ mov [es:di], dx ; First Row = Previous Last Row
 
 Resume:
 inc cx
-cmp cx, word[Comparator]
+cmp cx, word[EndingColumn]
 jne MoveRight
 
 ret
@@ -643,8 +642,8 @@ MoveBackground:
 
 ; Moves trees
 mov cx, 9
-mov word[Comparator], 19
-mov word[RowComparator], 24
+mov word[EndingColumn], 19
+mov word[EndingRow], 24
 call MoveScreenDown  
 
 ; For Road Bumps
@@ -681,18 +680,18 @@ add word[EnemyCarFactor], 35  ; Decrease to Increase Amount
 
 RoadLogic:
 mov cx, 19
-mov word[Comparator], 36
-mov word[RowComparator], 22
+mov word[EndingColumn], 36
+mov word[EndingRow], 22
 call MoveScreenDown  ; Moves Left Half of Road down
 
 mov cx, 36
-mov word[Comparator], 37
-mov word[RowComparator], 24
+mov word[EndingColumn], 37
+mov word[EndingRow], 24
 call MoveScreenDown  ; Moves roadline
 
 mov cx, 37
-mov word[Comparator], 55
-mov word[RowComparator], 22
+mov word[EndingColumn], 55
+mov word[EndingRow], 22
 call MoveScreenDown  ; Moves Right half of road down
 
 call delay  ; For Smoothness
@@ -749,21 +748,21 @@ call ResetScreenPointer
 
 mov cx, 15
 mov word[Color],0x0FB3   ; White colour
-mov word[Comparator], 16
+mov word[EndingColumn], 16
 call DisplayObject ; Left White Boundary
 
 ;-------------SILVER ROAD---------------
 
 mov cx, 16
 mov word[Color],0x7720   ; Silver colour
-mov word[Comparator], 29
+mov word[EndingColumn], 29
 call DisplayObject ; Silver Road
 
 ;-------RIGHT White COLOR BOUNDARY-------------
 
 mov cx, 29
 mov word[Color],0x0FB3   ; White colour
-mov word[Comparator], 30
+mov word[EndingColumn], 30
 call DisplayObject ; Right White Boundary
 
 ;-------TWO RED CARS---------
@@ -845,13 +844,11 @@ DisplayEnd:
 call ClearScreen 
 call EndScreen
 
-WaitForKey:
-mov ah, 01
-int 16h
-jz WaitForKey   ; if no key pressed 
+mov cx, 50
 
-xor ah, ah   ; Remove last keystroke from buffer
-int 16h
+PlayAgain:
+call delay
+loop PlayAgain
 
 ret
 ;------------------------------
@@ -896,8 +893,8 @@ SelectOption:
 
 call delay
 mov cx, 20
-mov word[Comparator], 26
-mov word[RowComparator], 24
+mov word[EndingColumn], 26
+mov word[EndingRow], 24
 call MoveScreenDown  ; Moves two Cars
 
 ; Get Option Key
