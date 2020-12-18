@@ -11,8 +11,8 @@ Distance: dw 0
 ;-------START SCREEN-----------
 GameName: db 'ROAD FIGHTER$'
 UnderLine: db '____________$'
-PlayGame: db '1. Play$'
-ExitGame: db '2. Exit$'
+PlayGame: db 'PLAY$'
+ExitGame: db 'EXIT$'
 ;--------END SCREEN------------
 WinMessage: db 'GOOD JOB! YOU WON$'
 LoseMessage: db 'BETTER LUCK NEXT TIME$'
@@ -23,9 +23,10 @@ Color : dw 0x0000
 HurdleType: dw 0x0000
 EnemyCarFactor: dw 25
 RoadBumpFactor: dw 50
-PointsCarFactor: dw 100
+PointsCarFactor: dw 75
 LeftCarMoveFactor: dw 50
 Won: db 0
+SelectorPosition: dw 10, 10 ; Current, Previous
 ;-------CAR POSITIONS----------
 LeftCarPosition: dw 24
 MainCarPosition: dw 35
@@ -33,7 +34,7 @@ MainCarPrevPosition: dw 35
 MainCarCoordinates : dw 0x0000
 ;-------COLOR PALLETE----------
 RoadBump: dw 0x70EC
-PointsCar: dw 0x0F08
+PointsCar: dw 0x7F08
 EnemyCar: dw 0x7408
 PlayerCar: dw 0x7208
 ;-------CONSTANTS------
@@ -51,14 +52,13 @@ ret
 delay:
 push cx
 mov cx, 0x0005 ; change the values  to increase delay time
-delay_loop1:
-push cx
-mov cx, 0x6FFF
-delay_loop2:
-loop delay_loop2
-
-pop cx
-loop delay_loop1
+	delay_loop1:
+	push cx
+	mov cx, 0x6FFF
+		delay_loop2:
+		loop delay_loop2
+	pop cx
+	loop delay_loop1
 pop cx
 ret
 ; -----------------------------------------CLEAR SCREEN------------------------------------------
@@ -103,7 +103,7 @@ pop dx
 ret
 ; --------------------------------------FILL COLOR ON ENTIRE COLUMN---------------------------------
 
-FillColor:;---  This function prints the given input color on the entire given column of the screen
+FillColor:  ; prints the given input color inside the bounds given
 
 push bp    
 mov bp,sp
@@ -122,23 +122,22 @@ mov bx , 0x0 ; Start Row -> Start Point
 
 mov dx, 25 ; End Row -> End Point
 
-MoveVerticalDown:
+	MoveVerticalDown:
 
-mov cx,[bp+6]    ; Starting Column Value cx(Passed from BackGround function)
+	mov cx,[bp+6]    ; Starting Column Value cx(Passed from BackGround function)
 
-; Function that Finds the Position on screen (ax(80) * bx(Row) + cx(Column))*2
-; Stores coordinates in di, modifies ax only
-call FindPosition
+	; Function that Finds the Position on screen (ax(80) * bx(Row) + cx(Column))*2
+	; Stores coordinates in di, modifies ax only
+	call FindPosition
 
-inc bx
+	inc bx
 
-; Function that displays the color [bp + 4] at location (di)
-; modifies di only
-call DisplayColor
+	; Function that displays the color [bp + 4] at location (di)
+	; modifies di only
+	call DisplayColor
 
-cmp bx,dx	; if Start point is not equal to end point, loop again
-
-jne MoveVerticalDown
+	cmp bx,dx	; if Start point is not equal to end point, loop again
+	jne MoveVerticalDown
 
 ; Restore
 pop si
@@ -155,21 +154,21 @@ ret ; sp -> Return address
 ; Function that displays different objects e.g. water, road, boundaries
 DisplayObject:
 
-RenderLoop:
+	RenderLoop:
 
-push cx  ; sp + 6 -> cx
+	push cx  ; sp + 6 -> cx
 
-mov ax, [Color]   ; Colour to render
-push ax   ; sp + 4 -> ax
+	mov ax, [Color]   ; Colour to render
+	push ax   ; sp + 4 -> ax
 
-call FillColor  ; sp+2 -> Return address
+	call FillColor  ; sp+2 -> Return address
 
-pop ax
-pop cx
+	pop ax
+	pop cx
 
-inc cx
-cmp cx, word[EndingColumn] ; Ending Column location for Object
-jne RenderLoop
+	inc cx
+	cmp cx, word[EndingColumn] ; Ending Column location for Object
+	jne RenderLoop
 
 ret
 ; --------------------------------------RENDER GRASS & ROADLINES------------------------------------
@@ -179,19 +178,19 @@ Display_Grass_RoadLines:
 
 call ResetScreenPointer
 
-Render_Grass_RoadLines:
+	Render_Grass_RoadLines:
 
-; (ax(80) * bx(Row) + cx(Column))*2
-; Stores coordinates in di, modifies ax only
-call FindPosition
+	; (ax(80) * bx(Row) + cx(Column))*2
+	; Stores coordinates in di, modifies ax only
+	call FindPosition
 
-mov dx, [Color]   ; Passed Object (GRASS OR ROADLINES)
-mov word [es:di], dx 
+	mov dx, [Color]   ; Passed Object (GRASS OR ROADLINES)
+	mov word [es:di], dx 
 
-add bx,5   ; Gap
+	add bx,5   ; Gap
 
-cmp bx, [EndingRow]
-jb Render_Grass_RoadLines
+	cmp bx, [EndingRow]
+	jb Render_Grass_RoadLines
 
 ret
 ; ---------------------------------------INITIALIZE BACKGROUND-------------------------------------
@@ -328,14 +327,14 @@ mov si, [bp+8] ; point si to string prompt
 
 mov ah, 0x07 ; normal attribute fixed in al
 
-; Display Score/Fuel Prompt
-NextChar: 
-mov al, [si] ; load next char of string
-mov [es:di], ax ; show this char on screen
-add di, 2 ; move to next screen location
-add si, 1 ; move to next char in string
-cmp byte[si], '$'
-jne NextChar
+	; Display Score/Fuel Prompt
+	NextChar: 
+	mov al, [si] ; load next char of string
+	mov [es:di], ax ; show this char on screen
+	add di, 2 ; move to next screen location
+	add si, 1 ; move to next char in string
+	cmp byte[si], '$'
+	jne NextChar
 
 ; Display Value
 ; Storing decimal value
@@ -344,21 +343,22 @@ cmp ax, 0
 je NoValue
 mov bx, 10 ; use base 10 for division
 mov cx, 0 ; initialize count of digits
-nextdigit: 
-mov dx, 0 ; zero upper half of dividend
-div bx ; divide by 10
-add dl, 0x30 ; convert digit into ascii value
-push dx ; save ascii value on stack
-inc cx ; increment count of values
-cmp ax, 0 ; is the quotient zero
-jnz nextdigit ; if no divide it again
 
-NextPosition: 
-pop dx ; remove a digit from the stack
-mov dh, 0x07 ; use normal attribute
-mov [es:di], dx ; print char on screen
-add di, 2 ; move to next screen location
-loop NextPosition ; repeat for all digits on stack
+	nextdigit: 
+	mov dx, 0 ; zero upper half of dividend
+	div bx ; divide by 10
+	add dl, 0x30 ; convert digit into ascii value
+	push dx ; save ascii value on stack
+	inc cx ; increment count of values
+	cmp ax, 0 ; is the quotient zero
+	jnz nextdigit ; if no divide it again
+
+	NextPosition: 
+	pop dx ; remove a digit from the stack
+	mov dh, 0x07 ; use normal attribute
+	mov [es:di], dx ; print char on screen
+	add di, 2 ; move to next screen location
+	loop NextPosition ; repeat for all digits on stack
 
 mov word[es:di], 0x0000  ; Adjust if base change e.g Value changes from thousands to hundreds 
                          ; Then we turn off the last zero
@@ -377,9 +377,9 @@ in  al, 61h         ; Turn on note (get value from port 61h).
 or  al, 00000011b   ; Set bits 1 and 0.
 out 61h, al         ; Send new value.
 
-.pause1:
-dec bx
-jne .pause1
+	.pause1:
+	dec bx
+	jne .pause1
 
 in  al, 61h         ; Turn off note (get value from port 61h).
 and al, 11111100b   ; Reset bits 1 and 0.
@@ -395,101 +395,97 @@ je RoadBumpHit
 cmp dx, [EnemyCar]
 je EnemyCarHit
 
-; if Collided with a point car
-add word[RoadBumpFactor], 50 ; Beacuse we increase score (Relative)
-add word[PointsCarFactor], 50  ; Beacuse we increase score (Relative)
-add word[EnemyCarFactor], 50
-add word[Score], 50  ; increase points
-mov bx, [CollisionSoundTime]   ; long duration
-call Sound
-jmp Back
+	PointCarHit:  ; if collided with a point car
+	add word[Score], 50  ; increase points
+	mov bx, [CollisionSoundTime]   ; long duration
+	call Sound
+	ret
 
-EnemyCarHit:  ; if collided with an enemy car
-mov word[Fuel], 0 ; Game Over
-mov bx, [CollisionSoundTime]  ; long duration
-call Sound
-jmp Back
+	EnemyCarHit:  ; if collided with an enemy car
+	mov word[Fuel], 0 ; Game Over
+	mov bx, [CollisionSoundTime]  ; long duration
+	call Sound
+	ret
 
-RoadBumpHit:   ; if collided with a road bump
-sub word[Fuel], 100   ; decrease fuel
-mov bx, [CollisionSoundTime]  ; long duration
-call Sound
-
-Back:
-ret
+	RoadBumpHit:   ; if collided with a road bump
+	sub word[Fuel], 100   ; decrease fuel
+	mov bx, [CollisionSoundTime]  ; long duration
+	call Sound
+	ret
 ; ----------------------------------------MOVE SCREEN DOWN--------------------------------------
 
 MoveScreenDown:
 
 call ResetScreenPointer
 
-MoveRight:
-mov bx , [EndingRow] ; Last Row
+	MoveRight:
 
-call FindPosition
+	mov bx , [EndingRow] ; Last Row
 
-mov dx, [es:di]
+	call FindPosition
 
-push dx ; Saving Last Row
+	mov dx, [es:di]
 
-mov dx, 0 ; End Row -> End Point
+	push dx ; Saving Last Row
 
-MoveDown:
+	mov dx, 0 ; End Row -> End Point
 
-; Function that Finds the Position on screen (ax(80) * bx(Row) + cx(Column))*2
-; Stores coordinates in di, modifies ax only
-call FindPosition ; Upper Location
-mov si , di  ; si holds the Upper location a[i + 1] -> 1
-dec bx ; Downward location
-call FindPosition ; Now di holds the Downward location a[i] -> 0
+		MoveDown:
 
-; Move each Location Down
-push dx
-mov dx, [es:di] ; Store Upper location in dx , dx = a[i]
-mov [es:si], dx ; Move Upper location to Downward location , a[i + 1] = a[i]
-pop dx
+		; Function that Finds the Position on screen (ax(80) * bx(Row) + cx(Column))*2
+		; Stores coordinates in di, modifies ax only
+		call FindPosition ; Upper Location
+		mov si , di  ; si holds the Upper location a[i + 1] -> 1
+		dec bx ; Downward location
+		call FindPosition ; Now di holds the Downward location a[i] -> 0
 
-cmp bx,dx	; if Start point is not equal to end point, loop again
-jne MoveDown  ; i= n-1;i >= 0; i--
+		; Move each Location Down
+		push dx
+		mov dx, [es:di] ; Store Upper location in dx , dx = a[i]
+		mov [es:si], dx ; Move Upper location to Downward location , a[i + 1] = a[i]
+		pop dx
 
-call FindPosition  ; Finding Coordinates of first row
+		cmp bx,dx	; if Start point is not equal to end point, loop again
+		jne MoveDown  ; i= n-1;i >= 0; i--
 
-pop dx  ; Restore previous saved Last Row
+	call FindPosition  ; Finding Coordinates of first row
 
-cmp word[EndingRow], 24
-je NoCollision
+	pop dx  ; Restore previous saved Last Row
 
-CheckRoadBump:
-cmp dx, [RoadBump]       ; check if it was a road bump
-jne CheckPointCar   ; if not than check for point car
-cmp dx, [MainCarCoordinates]  ; check if road bump was above player car
-jne Resume ; if not then skip
-call Collision  ; else collision occured
-jmp Resume
+	cmp word[EndingRow], 24 ; if already at last row then no collision can occur
+	je NoCollision
 
-CheckPointCar:   
-cmp dx, [PointsCar]      ; check if it was a point car
-jne CheckEnemyCar     ; if not then it was another object so move it to first row
-cmp dx, [MainCarCoordinates]  ; check if point car was above player car
-jne Resume ; if not then skip
-call Collision ; else collision occured
-jmp Resume
+	CheckRoadBump:
+	cmp dx, [RoadBump]       ; check if it was a road bump
+	jne CheckPointCar   ; if not than check for point car
+	cmp dx, [MainCarCoordinates]  ; check if road bump was above player car
+	jne Resume ; if not then skip
+	call Collision  ; else collision occured
+	jmp Resume
 
-CheckEnemyCar:
-cmp dx, [EnemyCar]      ; check if it was a enemy car
-jne NoCollision     ; if not then it was another object so move it to first row
-cmp dx, [MainCarCoordinates]  ; check if enemy car was above player car
-jne Resume ; if not then skip
-call Collision ; else collision occured
-jmp Resume
+	CheckPointCar:   
+	cmp dx, [PointsCar]      ; check if it was a point car
+	jne CheckEnemyCar     ; if not then it was another object so move it to first row
+	cmp dx, [MainCarCoordinates]  ; check if point car was above player car
+	jne Resume ; if not then skip
+	call Collision ; else collision occured
+	jmp Resume
 
-NoCollision:
-mov [es:di], dx ; First Row = Previous Last Row
+	CheckEnemyCar:
+	cmp dx, [EnemyCar]      ; check if it was a enemy car
+	jne NoCollision     ; if not then it was another object so move it to first row
+	cmp dx, [MainCarCoordinates]  ; check if enemy car was above player car
+	jne Resume ; if not then skip
+	call Collision ; else collision occured
+	jmp Resume
 
-Resume:
-inc cx
-cmp cx, word[EndingColumn]
-jne MoveRight
+	NoCollision:
+	mov [es:di], dx ; First Row = Previous Last Row
+
+	Resume:
+	inc cx
+	cmp cx, word[EndingColumn]
+	jne MoveRight
 
 ret
 ; ----------------------------------------MOVE SCREEN UP-------------------------------------------------
@@ -537,12 +533,12 @@ jne DisplayHurdle
 
 inc cx
 
-DisplayHurdle:
-mov bx, 1      ; Row 
-call FindPosition
+	DisplayHurdle:
+	mov bx, 1      ; Row 
+	call FindPosition
 
-mov dx, [HurdleType] ; Make this dynamic to create different hurdles
-mov word[es:di], dx  
+	mov dx, [HurdleType] ; Make this dynamic to create different hurdles
+	mov word[es:di], dx  
 
 ret 
 ;------------------------------------MOVE LEFT CAR UPWARDS--------------------------------------
@@ -583,17 +579,17 @@ MoveMainCarLeft:
 cmp word[MainCarPosition], 20   ; Left Road Bound
 jl Continue
 
-; Middle row holds road lines that move down so avoiding them
-AvoidMiddleLeft:   
-cmp word[MainCarPosition], 37  ; Middle is 36 so we dec two times to get 35
-jne NormalLeft
-dec word[MainCarPosition]
-dec word[MainCarPosition]
-jmp Continue
+	; Middle row holds road lines that move down so avoiding them
+	AvoidMiddleLeft:   
+	cmp word[MainCarPosition], 37  ; Middle is 36 so we dec two times to get 35
+	jne NormalLeft
+	dec word[MainCarPosition]
+	dec word[MainCarPosition]
+	jmp Continue
 
-NormalLeft:       
-dec word[MainCarPosition]
-jmp Continue
+	NormalLeft:       
+	dec word[MainCarPosition]
+	jmp Continue
 
 ;----------------------------------------MOVE MAIN CAR RIGHT----------------------------------------
 ; For Moving car right
@@ -602,17 +598,17 @@ MoveMainCarRight:
 cmp word[MainCarPosition], 53   ; Right Road Bound
 jg Continue
 
-; Middle row holds road lines that move down so avoiding them
-AvoidMiddleRight:   
-cmp word[MainCarPosition], 35 ; Middle is 36 so we inc two times to get 37
-jne NormalRight
-inc word[MainCarPosition]
-inc word[MainCarPosition]
-jmp Continue
+	; Middle row holds road lines that move down so avoiding them
+	AvoidMiddleRight:   
+	cmp word[MainCarPosition], 35 ; Middle is 36 so we inc two times to get 37
+	jne NormalRight
+	inc word[MainCarPosition]
+	inc word[MainCarPosition]
+	jmp Continue
 
-NormalRight:       
-inc word[MainCarPosition]
-jmp Continue
+	NormalRight:       
+	inc word[MainCarPosition]
+	jmp Continue
 ;------------------------------------INPUT CAR DIRECTION----------------------------------------
 
 GetMainCarInput:
@@ -640,65 +636,67 @@ ret
 ;---------------------------------------MOVING BACKGROUND-------------------------------------------------
 MoveBackground:
 
-; Moves trees
-mov cx, 9
-mov word[EndingColumn], 19
-mov word[EndingRow], 24
-call MoveScreenDown  
+	; Moves trees
+	TreeLogic:
+	mov cx, 9
+	mov word[EndingColumn], 19
+	mov word[EndingRow], 24
+	call MoveScreenDown  
 
-; For Road Bumps
-ChooseBump:
-mov ax, [RoadBump]
-mov word[HurdleType], ax
-mov ax, [RoadBumpFactor]
-cmp word[Score], ax   ; if score has reached the generation factor for road bump
-jne ChoosePointCar    ; we only generate the road bump then
-call GenerateRandomHurdles
-add word[RoadBumpFactor], 35  ; Decrease to Increase Amount
-jmp RoadLogic
+	; For Road Bumps
+	ChooseBump:
+	mov ax, [RoadBump]
+	mov word[HurdleType], ax
+	mov ax, [RoadBumpFactor]
+	cmp word[Distance], ax   ; if score has reached the generation factor for road bump
+	jne ChoosePointCar    ; we only generate the road bump then
+	call GenerateRandomHurdles
+	add word[RoadBumpFactor], 35  ; Decrease to Increase Amount
+	jmp RoadLogic
 
-; For Point Cars
-ChoosePointCar:
-mov ax, [PointsCar]
-mov word[HurdleType], ax
-mov ax, [PointsCarFactor]
-cmp word[Score], ax   ; if score has reached the generation factor of point car 
-jne ChooseEnemyCar         ; we only generate the point car then
-call GenerateRandomHurdles
-add word[PointsCarFactor], 35  ; Decrease to Increase Amount
-jmp RoadLogic
+	; For Point Cars
+	ChoosePointCar:
+	mov ax, [PointsCar]
+	mov word[HurdleType], ax
+	mov ax, [PointsCarFactor]
+	cmp word[Distance], ax   ; if score has reached the generation factor of point car 
+	jne ChooseEnemyCar         ; we only generate the point car then
+	call GenerateRandomHurdles
+	add word[PointsCarFactor], 35  ; Decrease to Increase Amount
+	jmp RoadLogic
 
-;For Enemy CARS
-ChooseEnemyCar:
-mov ax, [EnemyCar]
-mov word[HurdleType], ax
-mov ax, [EnemyCarFactor]
-cmp word[Score], ax   ; if score has reached the generation factor of point car 
-jne RoadLogic         ; we only generate the point car then
-call GenerateRandomHurdles
-add word[EnemyCarFactor], 35  ; Decrease to Increase Amount
+	;For Enemy CARS
+	ChooseEnemyCar:
+	mov ax, [EnemyCar]
+	mov word[HurdleType], ax
+	mov ax, [EnemyCarFactor]
+	cmp word[Distance], ax   ; if score has reached the generation factor of point car 
+	jne RoadLogic         ; we only generate the point car then
+	call GenerateRandomHurdles
+	add word[EnemyCarFactor], 35  ; Decrease to Increase Amount
 
-RoadLogic:
-mov cx, 19
-mov word[EndingColumn], 36
-mov word[EndingRow], 22
-call MoveScreenDown  ; Moves Left Half of Road down
+	RoadLogic:
+	mov cx, 19
+	mov word[EndingColumn], 36
+	mov word[EndingRow], 22
+	call MoveScreenDown  ; Moves Left Half of Road down
 
-mov cx, 36
-mov word[EndingColumn], 37
-mov word[EndingRow], 24
-call MoveScreenDown  ; Moves roadline
+	mov cx, 36
+	mov word[EndingColumn], 37
+	mov word[EndingRow], 24
+	call MoveScreenDown  ; Moves roadline
 
-mov cx, 37
-mov word[EndingColumn], 55
-mov word[EndingRow], 22
-call MoveScreenDown  ; Moves Right half of road down
+	mov cx, 37
+	mov word[EndingColumn], 55
+	mov word[EndingRow], 22
+	call MoveScreenDown  ; Moves Right half of road down
 
-call delay  ; For Smoothness
-
-mov ax, [LeftCarMoveFactor]   ; Animation for left side car
-cmp word[Distance], ax
-je MoveLeftCar
+	call delay  ; For Smoothness
+	
+	LeftRoadLogic:
+	mov ax, [LeftCarMoveFactor]   ; Animation for left side car
+	cmp word[Distance], ax
+	je MoveLeftCar
 
 ret
 ;------------------------------------------SHOW STATS---------------------------------------
@@ -815,7 +813,7 @@ mov si, PlayGame  ; Prompt
 push si
 mov ax, 10   ; Row
 push ax
-mov ax, 50   ; Column
+mov ax, 52   ; Column
 push ax
 call PrintStats  
 pop ax
@@ -829,7 +827,7 @@ mov si, ExitGame  ; Prompt
 push si
 mov ax, 14   ; Row
 push ax
-mov ax, 50   ; Column
+mov ax, 52   ; Column
 push ax
 call PrintStats 
 pop ax
@@ -846,79 +844,47 @@ call EndScreen
 
 mov cx, 50
 
-PlayAgain:
-call delay
-loop PlayAgain
+	PlayAgain:
+	call delay
+	loop PlayAgain
 
 ret
 ;------------------------------
 EndScreen:
 cmp byte[Won], 0
-je Lost
+je PlayerLost
 
-mov ax, 0   ; No Value
-push ax
-mov si, WinMessage  ; Prompt
-push si
-mov ax, 12   ; Row
-push ax
-mov ax, 30   ; Column
-push ax
-call PrintStats  ; Print Message
-pop ax
-pop ax
-pop si
-pop ax
-jmp ReturnBack
+	PlayerWon:
+	mov ax, 0   ; No Value
+	push ax
+	mov si, WinMessage  ; Prompt
+	push si
+	mov ax, 12   ; Row
+	push ax
+	mov ax, 30   ; Column
+	push ax
+	call PrintStats  ; Print Message
+	pop ax
+	pop ax
+	pop si
+	pop ax
+	ret
 
-Lost:
-mov ax, 0   ; No Value
-push ax
-mov si, LoseMessage  ; Prompt
-push si
-mov ax, 12   ; Row
-push ax
-mov ax, 30   ; Column
-push ax
-call PrintStats  ; Print Message
-pop ax
-pop ax
-pop si
-pop ax
-
-ReturnBack:
-ret
-;---------------------------------------START MENU----------------------------------------------
-SelectOption: 
-
-call delay
-mov cx, 20
-mov word[EndingColumn], 26
-mov word[EndingRow], 24
-call MoveScreenDown  ; Moves two Cars
-
-; Get Option Key
-mov ah, 01
-int 16h
-jz SelectOption   ; if no key pressed 
-
-xor ah, ah   ; Remove last keystroke from buffer
-int 16h
-
-; Choose According to keystroke
-cmp al, 31h ; ascii for '1'   
-je PlayChoosed
-
-cmp al, 70h ; ascii for 'p' 
-je PlayChoosed
-
-cmp al, 32h ; ascii for '2'
-je Terminate
-
-cmp al, 1Bh ; ascii for 'ESC'
-je Terminate
-
-jmp SelectOption
+	PlayerLost:
+	mov ax, 0   ; No Value
+	push ax
+	mov si, LoseMessage  ; Prompt
+	push si
+	mov ax, 12   ; Row
+	push ax
+	mov ax, 30   ; Column
+	push ax
+	call PrintStats  ; Print Message
+	pop ax
+	pop ax
+	pop si
+	pop ax
+	ret
 ;----------------------------------------RESET VARIABLES----------------------------
 Reset:
 mov word[Score], 0
@@ -928,9 +894,82 @@ mov word[LeftCarPosition], 24
 mov byte[Won], 0
 mov word[EnemyCarFactor], 25
 mov word[RoadBumpFactor], 50
-mov word[PointsCarFactor], 100
+mov word[PointsCarFactor], 75
 mov word[LeftCarMoveFactor], 50
 ret
+;-------------------------DISPLAY SELECTOR--------------
+DisplaySelector:
+
+mov dx, [SelectorPosition]
+cmp dx, [SelectorPosition+2]
+je NotChanged
+
+mov cx, 50  ; Column
+mov bx, [SelectorPosition+2]  ; Row
+call FindPosition
+mov dx, 0x0720    ; Clear Previous Position
+mov word[es:di], dx  ; Selector Color
+
+mov dx, [SelectorPosition]
+mov [SelectorPosition+2], dx
+
+NotChanged:
+mov cx, 50  ; Column
+mov bx, [SelectorPosition]  ; Row
+call FindPosition
+mov dx, 0x0710    ; Show At Current Position
+mov word[es:di], dx  ; Selector Color
+
+ret
+;---------------------------------------START MENU----------------------------------------------
+SelectOption: 
+
+call delay
+mov cx, 20
+mov word[EndingColumn], 26
+mov word[EndingRow], 24
+call MoveScreenDown  ; Moves two Cars
+call DisplaySelector
+
+; Interrupt
+mov ah, 01
+int 16h
+jz SelectOption   ; if no key pressed 
+
+mov dh, ah   ; Store ScanCode
+
+xor ah, ah   ; Remove last keystroke from buffer
+int 16h
+
+	CheckUpArrow:
+	cmp dh, 72  ; ScanCode for Up arrow 
+	jne CheckDownArrow
+	cmp word[SelectorPosition], 14
+	jne CheckFixedKeys
+	sub word[SelectorPosition], 4  ; Move Selector Up
+
+	CheckDownArrow:
+	cmp dh, 80  ; ScanCode for down arrow 
+	jne CheckFixedKeys
+	cmp word[SelectorPosition], 10
+	jne CheckFixedKeys
+	add word[SelectorPosition], 4  ; Move Selector Up
+
+	CheckFixedKeys:
+	cmp al, 70h ; ascii for 'p' 
+	je PlayChoosed
+
+	cmp al, 1Bh ; ascii for 'ESC'
+	je Terminate
+
+	cmp al, 0Dh ; ascii for Enter/CR Key
+	jne SelectOption
+	cmp word[SelectorPosition], 10
+	je PlayChoosed
+	cmp word[SelectorPosition], 14
+	je Terminate
+
+jmp SelectOption
 ; -----------------------------------------MAIN-------------------------------------------------
 start:
 
@@ -939,39 +978,38 @@ call ClearScreen
 call StartScreen 
 jmp SelectOption
 
-PlayChoosed:
+	PlayChoosed:
 
-call ClearScreen 
-call BackGround 
+	call ClearScreen 
+	call BackGround 
 
-; Game loop
-GameLoop:
+		; Game loop
+		GameLoop:
 
-call PrintCar   ; Print Main Car
+		call PrintCar   ; Print Main Car
 
-call ShowStats  ; Print Fuel & Score
+		call ShowStats  ; Print Fuel & Score
 
-call MoveBackground   ; Moving background
-call GetMainCarInput  ; Input for car
+		call MoveBackground   ; Moving background
+		call GetMainCarInput  ; Input for car
 
-mov bx, [CarSoundTime]  ; duration
-call Sound   ; Car moving sound
+		mov bx, [CarSoundTime]  ; duration
+		call Sound   ; Car moving sound
 
-CheckFuel:
-cmp word[Fuel], 0     ; check if no fuel left
-ja CheckFinishLine  ; if there is fuel available then check for finish line
+			CheckFuel:
+			cmp word[Fuel], 0     ; check if no fuel left
+			ja CheckFinishLine  ; if there is fuel available then check for finish line
+			call DisplayEnd    ; else show end screen for player lose
+			jmp start   ; Go back to main menu
 
-call DisplayEnd    ; else show end screen for player lose
-jmp start   ; Go back to main menu
-
-CheckFinishLine:
-cmp word[LeftCarPosition], 0   ; check if left car reached end line
-ja GameLoop   ; if not reached end line then loop again
-
-mov byte[Won], 1  ; Player Won is true
-call DisplayEnd   ; else show end screen for player won
-jmp start   ; Go back to main menu
-
+			CheckFinishLine:
+			cmp word[LeftCarPosition], 0   ; check if left car reached end line
+			ja GameLoop   ; if not reached end line then loop again
+			mov byte[Won], 1  ; Player Won is true
+			call DisplayEnd   ; else show end screen for player won
+			jmp start   ; Go back to main menu
+			
+;----------------------------------TERMINATE------------------------------------
 Terminate:
 call ClearScreen 
 mov ax, 0x4c00 ; terminate program
