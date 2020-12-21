@@ -13,6 +13,11 @@ GameName: db 'ROAD FIGHTER$'
 UnderLine: db '____________$'
 PlayGame: db 'PLAY$'
 ExitGame: db 'EXIT$'
+Legend: db '"LEGEND"$'
+PointCarInfo: db 'INCREASES SCORE$'
+EnemyCarInfo: db 'INSTANT DEATH$'
+RoadBumpInfo: db 'DECREASES FUEL$'
+PressAnyKey: db 'PRESS ANY KEY TO START$'
 ;--------END SCREEN------------
 WinMessage: db 'GOOD JOB! YOU WON$'
 LoseMessage: db 'BETTER LUCK NEXT TIME$'
@@ -27,6 +32,11 @@ PointsCarFactor: dw 75
 LeftCarMoveFactor: dw 50
 Won: db 0
 SelectorPosition: dw 10, 10 ; Current, Previous
+IsZigZag: db 0
+ZigZagControl: dw 0x0
+LeftRoadBound: dw 0
+RightRoadBound: dw 0
+ZigZagRoadFactor: dw 900 ; Distance after which zig zag road starts
 ;-------CAR POSITIONS----------
 LeftCarPosition: dw 24
 MainCarPosition: dw 35
@@ -38,10 +48,15 @@ PointsCar: dw 0x7F08
 EnemyCar: dw 0x7408
 PlayerCar: dw 0x7208
 ;-------CONSTANTS------
+RoadStartLocation: dw 38
+EndingRoadColumn: dw 60
 RoadStart : dw 20
+ZigZagRoadStart: dw 31
 CarSoundTime: dw 3500 ; Duration
 CollisionSoundTime: dw 65000   ; Duration
 SoundFrequency: dw 4560  ; Frequency
+ZigZagRoadLength: dw 13
+StraightRoadLength: dw 30
 
 ; ---------------------------------RESET VIDEO MEMORY ADDRESS--------------------------------------
 ResetScreenPointer:
@@ -54,7 +69,7 @@ push cx
 mov cx, 0x0005 ; change the values  to increase delay time
 	delay_loop1:
 	push cx
-	mov cx, 0x6FFF
+	mov cx, 0x3FFF
 		delay_loop2:
 		loop delay_loop2
 	pop cx
@@ -522,12 +537,25 @@ int 1ah      ; CX:DX now hold number of clock ticks since midnight
 
 mov  ax, dx
 xor  dx, dx
-mov  cx, 30    
-div  cx       ; here dx contains the remainder of the division - from 0 to 29
 
-mov cx, [RoadStart]   ; Starting Point of Main Road
+cmp byte[IsZigZag], 1   ; Check if Zig Zag Road is On
+je HurdleForZigZag
+
+mov  cx, [StraightRoadLength]    
+div  cx       ; here dx contains the remainder of the division
+
+mov cx, [RoadStart]   ; Starting Point of Straight Road
+add cx, dx   ; Add the random remainder we got to generate column
+jmp CheckMiddleLane
+
+HurdleForZigZag:   ; if On then calculate position accordingly
+mov  cx, [ZigZagRoadLength]    
+div  cx       ; here dx contains the remainder of the division
+
+mov cx, [ZigZagRoadStart]   ; Starting Point of Zig Zag Road
 add cx, dx   ; Add the random remainder we got to generate column
 
+CheckMiddleLane:
 cmp cx, 36  ; Check for middle lane
 jne DisplayHurdle
 
@@ -576,7 +604,8 @@ ret
 ;--------------------------------------MOVE MAIN CAR LEFT--------------------------------------------
 MoveMainCarLeft:
 
-cmp word[MainCarPosition], 20   ; Left Road Bound
+mov ax, [LeftRoadBound]
+cmp word[MainCarPosition], ax   ; Left Road Bound
 jl Continue
 
 	; Middle row holds road lines that move down so avoiding them
@@ -595,7 +624,8 @@ jl Continue
 ; For Moving car right
 MoveMainCarRight:
 
-cmp word[MainCarPosition], 53   ; Right Road Bound
+mov ax, [RightRoadBound]
+cmp word[MainCarPosition], ax   ; Right Road Bound
 jg Continue
 
 	; Middle row holds road lines that move down so avoiding them
@@ -625,6 +655,18 @@ mov dh, ah ; Save ScanCode
 xor ah, ah   ; Remove last keystroke from buffer
 int 16h
 
+cmp byte[IsZigZag], 1  ; Check if Zig Zag is ON 
+je ZigZagCarMovement
+
+mov word[LeftRoadBound], 20     ; Road Bounds for Staright Road
+mov word[RightRoadBound], 53
+jmp CheckKeyStroke
+
+ZigZagCarMovement:
+mov word[LeftRoadBound], 32   ; Road Bounds for Zig Zag Road
+mov word[RightRoadBound], 43
+
+CheckKeyStroke:
 cmp dh, 75 ; ScanCode for left arrow  
 je MoveMainCarLeft
 
@@ -635,7 +677,24 @@ Continue:
 ret
 ;---------------------------------------MOVING BACKGROUND-------------------------------------------------
 MoveBackground:
-
+	
+	mov ax, [ZigZagRoadFactor]
+	cmp word[Distance], ax  ; Check if we can generate zig zag road
+	jne TreeLogic
+	
+	; Clear Boundaries of Straigh Road
+	mov cx, 18    
+	mov word[Color],0x1EDB   ; Yellow colour Ground on Left White Boundary
+	mov word[EndingColumn], 19
+	call DisplayObject ; 
+	
+	mov cx, 55
+	mov word[Color],0x3FB0   ; Light Blue Water on Right White Boundary
+	mov word[EndingColumn], 56
+	call DisplayObject ; 
+	
+	mov byte[IsZigZag], 1   ; Initialize Zig Zag Road
+	
 	; Moves trees
 	TreeLogic:
 	mov cx, 9
@@ -675,7 +734,12 @@ MoveBackground:
 	call GenerateRandomHurdles
 	add word[EnemyCarFactor], 35  ; Decrease to Increase Amount
 
+	;Straight Road Logic
 	RoadLogic:
+	
+	cmp byte[IsZigZag], 1   ; If Zig Zag is On then go to its logic
+	je ZigZagRoadLogic
+	
 	mov cx, 19
 	mov word[EndingColumn], 36
 	mov word[EndingRow], 22
@@ -690,14 +754,131 @@ MoveBackground:
 	mov word[EndingColumn], 55
 	mov word[EndingRow], 22
 	call MoveScreenDown  ; Moves Right half of road down
-
-	call delay  ; For Smoothness
+	jmp LeftRoadLogic
+	
+	; Zig Zag Road Logic
+	ZigZagRoadLogic:
+	
+	call DisplayFirstRow
+	
+	call UpdateRoadStartLocation
+	
+	mov cx, 19
+	mov word[EndingRoadColumn], 31
+	mov word[EndingRow], 24
+	call MoveScreenZigZag    ; Moves Left Half of Road down
+	
+	mov cx, 31
+	mov word[EndingColumn], 45
+	mov word[EndingRow], 22
+	call MoveScreenDown  ; Moves Middle
+	
+	mov cx, 45
+	mov word[EndingRoadColumn], 60
+	mov word[EndingRow], 24
+	call MoveScreenZigZag  ; Moves Right half of road down
 	
 	LeftRoadLogic:
 	mov ax, [LeftCarMoveFactor]   ; Animation for left side car
 	cmp word[Distance], ax
 	je MoveLeftCar
 
+call delay  ; For Smoothness
+ret
+;-----------------------------------------------------------------------------
+MoveScreenZigZag:
+
+mov ax, 0xb800
+mov es, ax
+
+	MoveScreenZigZagRight:
+
+	mov bx , [EndingRow] ; Last Row
+
+	mov dx, 0 ; End Row -> End Point
+
+		MoveScreenZigZagDown:
+
+		; Function that Finds the Position on screen (ax(80) * bx(Row) + cx(Column))*2
+		; Stores coordinates in di, modifies ax only
+		call FindPosition ; Upper Location
+		mov si , di  ; si holds the Upper location a[i + 1] -> 1
+		dec bx ; Downward location
+		call FindPosition ; Now di holds the Downward location a[i] -> 0
+
+		; Move each Location Down
+		push dx
+		mov dx, [es:di] ; Store Upper location in dx , dx = a[i]
+		mov [es:si], dx ; Move Upper location to Downward location , a[i + 1] = a[i]
+		pop dx
+
+		cmp bx,dx	; if Start point is not equal to end point, loop again
+		jne MoveScreenZigZagDown  ; i= n-1;i >= 0; i--
+
+	inc cx
+	cmp cx, word[EndingRoadColumn]
+	jne MoveScreenZigZagRight
+
+ret
+;-------------------------------------------------------------------------
+DisplayFirstRow:
+
+	mov di,[RoadStartLocation]
+	mov bx,di
+	mov ax,0xb800
+	mov es,ax
+
+	
+	mov dx,0x1EDB
+	mov [es:di],dx
+	add di,2
+	
+	mov cx, 25
+	
+	mov dx,0x07DB
+	road:	
+		mov [es:di],dx
+		add di,2
+	loop road
+	
+	mov dx,0x3FB0
+	mov [es:di],dx
+	add di,2
+	
+	mov [RoadStartLocation],bx
+	
+ret 
+
+
+;==================
+UpdateRoadStartLocation:
+
+mov ax,[RoadStartLocation]
+mov bx,[ZigZagControl]
+
+cmp bx,0x0
+je increment
+cmp bx,0x1
+je decrement
+
+	increment:
+	add ax,2
+	mov [RoadStartLocation],ax
+	cmp ax,60
+	jne last
+	mov word[ZigZagControl],0x01
+	
+	jmp last
+	
+	decrement:
+	sub ax,2
+	mov [RoadStartLocation],ax
+	cmp ax,38
+	jne last
+	mov word [ZigZagControl],0x0
+	
+last:
+		
 ret
 ;------------------------------------------SHOW STATS---------------------------------------
 ShowStats:
@@ -896,8 +1077,128 @@ mov word[EnemyCarFactor], 25
 mov word[RoadBumpFactor], 50
 mov word[PointsCarFactor], 75
 mov word[LeftCarMoveFactor], 50
+mov byte[IsZigZag], 0
+mov word[ZigZagControl], 0x0
+mov word[LeftRoadBound], 0
+mov word[RightRoadBound], 0
 ret
-;-------------------------DISPLAY SELECTOR--------------
+;-----------------------------------------INSTRUCTIONS-----------------------------
+Instructions:
+
+mov ax, 0   ; No Value
+push ax
+mov si, Legend  ; Prompt
+push si
+mov ax, 4   ; Row
+push ax
+mov ax, 36   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+
+mov cx, 0
+mov bx, 10
+
+RoadBelt:
+call FindPosition      
+mov word[es:di], 0x7720  ; Silver Road
+inc cx
+cmp cx, 80
+jne RoadBelt
+
+mov cx, 15  ; Column
+mov bx, 10  ; Row
+call FindPosition  
+mov dx, [PointsCar]     
+mov word[es:di], dx  ; Car Color
+
+mov ax, 0   ; No Value
+push ax
+mov si, PointCarInfo  ; Prompt
+push si
+mov ax, 12   ; Row
+push ax
+mov ax, 8   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+
+mov cx, 40  ; Column
+mov bx, 10  ; Row
+call FindPosition  
+mov dx, [RoadBump]     
+mov word[es:di], dx  ; Car Color
+
+mov ax, 0   ; No Value
+push ax
+mov si, RoadBumpInfo  ; Prompt
+push si
+mov ax, 12   ; Row
+push ax
+mov ax, 33   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+
+mov cx, 64  ; Column
+mov bx, 10  ; Row
+call FindPosition  
+mov dx, [EnemyCar]     
+mov word[es:di], dx  ; Car Color
+
+mov ax, 0   ; No Value
+push ax
+mov si, EnemyCarInfo  ; Prompt
+push si
+mov ax, 12   ; Row
+push ax
+mov ax, 58   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+mov ax, 0   ; No Value
+push ax
+mov si, PressAnyKey  ; Prompt
+push si
+mov ax, 18   ; Row
+push ax
+mov ax, 30   ; Column
+push ax
+call PrintStats  
+pop ax
+pop ax
+pop si
+pop ax
+
+WaitInstruction:
+call delay
+
+; Interrupt
+mov ah, 01
+int 16h
+jz WaitInstruction   ; if no key pressed 
+
+xor ah, ah   ; Remove last keystroke from buffer
+int 16h
+
+ret
+;---------------------------------------DISPLAY SELECTOR---------------------------
 DisplaySelector:
 
 mov dx, [SelectorPosition]
@@ -973,14 +1274,16 @@ jmp SelectOption
 ; -----------------------------------------MAIN-------------------------------------------------
 start:
 
-call Reset
+call Reset   ; Reset
 call ClearScreen 
 call StartScreen 
 jmp SelectOption
 
 	PlayChoosed:
-
-	call ClearScreen 
+	
+	call ClearScreen
+	call Instructions
+	call ClearScreen
 	call BackGround 
 
 		; Game loop
