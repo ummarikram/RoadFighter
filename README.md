@@ -16,5 +16,5 @@ Use DOS-BOX & NASM to run the following code:
 
 ## CONTRIBUTORS
 
-[JUNAID AFZAL](https://github.com/JunaidFASTNu)
+[JUNAID AFZAL](https://github.com/MuhammadJunaidAfzal)
 
